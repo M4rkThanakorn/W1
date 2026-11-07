@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turtle Shop - ระบบจัดการสินค้าหมดอายุ & RTC</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { background-color: #f4f6f9; font-family: 'Kanit', sans-serif; }
+    .card { border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: none; }
+    .badge-rtc-30 { background-color: #ffc107; color: #000; font-size: 0.95rem; font-weight: 500; }
+    .badge-rtc-50 { background-color: #dc3545; color: #fff; font-size: 0.95rem; font-weight: 500; }
+    .badge-expired { background-color: #343a40; color: #fff; font-size: 0.95rem; font-weight: 500; }
+    .nav-pills .nav-link { font-weight: 500; border-radius: 8px; padding: 10px 20px; }
+    .nav-pills .nav-link.active { background-color: #0d6efd; box-shadow: 0 4px 10px rgba(13,110,253,0.3); }
+    @media print {
+      .no-print { display: none !important; }
+      .card { border: none !important; box-shadow: none !important; background: transparent !important; }
+      body { background: white !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container py-3 py-md-4">
+  <!-- Header Branding -->
+  <div class="text-center mb-4">
+    <span class="badge bg-danger mb-2 px-3 py-2 fs-6"><i class="bi bi-shop me-1"></i> สาขาสนามกีฬาแห่งชาติ</span>
+    <h3 class="fw-bold text-dark mb-0">Turtle Shop - ระบบบันทึกวันหมดอายุ & RTC</h3>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <ul class="nav nav-pills mb-4 justify-content-center no-print gap-2" id="mainTab" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" id="scan-tab" data-bs-toggle="tab" data-bs-target="#scan-pane"><i class="bi bi-upc-scan me-1"></i> สแกน/บันทึกวันหมดอายุ</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="master-tab" data-bs-toggle="tab" data-bs-target="#master-pane"><i class="bi bi-plus-circle me-1"></i> เพิ่มสินค้าสต๊อก</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="report-tab" data-bs-toggle="tab" data-bs-target="#report-pane" onclick="loadLogs()"><i class="bi bi-file-earmark-text me-1"></i> รายงาน & พิมพ์ PDF</button>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="mainTabContent">
+    
+    <!-- Tab 1: สแกนและบันทึกวันหมดอายุ (Optimistic UI for Speed) -->
+    <div class="tab-pane fade show active" id="scan-pane">
+      <div class="row justify-content-center">
+        <div class="col-lg-6 col-md-8">
+          <div class="card p-4 p-md-4">
+            <h5 class="card-title mb-3 text-primary fw-semibold"><i class="bi bi-search me-1"></i> ค้นหาและบันทึกวันหมดอายุ</h5>
+            
+            <div class="mb-3">
+              <label class="form-label fw-medium">ยิงบาร์โค้ด หรือ พิมพ์รหัสสินค้า</label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text bg-white"><i class="bi bi-upc"></i></span>
+                <input type="text" id="scanBarcode" class="form-control" placeholder="แตะหรือสแกนบาร์โค้ดที่นี่..." autofocus oninput="findProduct()">
+              </div>
+            </div>
+
+            <!-- แสดงข้อมูลสินค้าเมื่อค้นหาเจอ -->
+            <div id="productInfo" class="alert alert-primary d-none mb-3 py-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 id="dispName" class="fw-bold mb-0 text-dark"></h6>
+                  <small class="text-muted">ราคา: <span id="dispPrice" class="fw-bold"></span> บาท</small>
+                </div>
+                <span class="badge bg-success">พบสินค้าในระบบ</span>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-medium">วันหมดอายุ (Expiry Date)</label>
+              <input type="date" id="expiryDate" class="form-control form-control-lg" onchange="calcDays()">
+            </div>
+
+            <!-- ผลลัพธ์การคำนวณวันและป้าย RTC -->
+            <div id="calcResult" class="mb-3 d-none">
+              <div class="p-3 bg-light rounded text-center border">
+                <div class="text-muted small">เหลือก่อนหมดอายุ</div>
+                <div><strong id="daysLeft" class="fs-3 text-dark"></strong> <span class="text-muted">วัน</span></div>
+                <div id="rtcStatus" class="mt-2"></div>
+              </div>
+            </div>
+
+            <button class="btn btn-primary w-100 btn-lg py-3 fw-semibold shadow-sm" onclick="saveLog()"><i class="bi bi-check-circle-fill me-1"></i> บันทึกข้อมูลเข้าระบบ</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: เพิ่มสินค้าใหม่เข้า Master -->
+    <div class="tab-pane fade" id="master-pane">
+      <div class="row justify-content-center">
+        <div class="col-lg-6 col-md-8">
+          <div class="card p-4">
+            <h5 class="card-title mb-3 text-success fw-semibold"><i class="bi bi-box-seam me-1"></i> เพิ่มสินค้าใหม่เข้าฐานข้อมูล</h5>
+            <div class="mb-3">
+              <label class="form-label fw-medium">บาร์โค้ด (Barcode)</label>
+              <input type="text" id="newBarcode" class="form-control" placeholder="เช่น 8850000000001">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-medium">ชื่อสินค้า</label>
+              <input type="text" id="newName" class="form-control" placeholder="เช่น ชาไทยคาเฟ่ RTC">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-medium">ราคา (บาท)</label>
+              <input type="number" id="newPrice" class="form-control" placeholder="เช่น 45">
+            </div>
+            <button class="btn btn-success w-100 btn-lg py-2 fw-semibold" onclick="saveMaster()"><i class="bi bi-plus-lg me-1"></i> บันทึกสินค้าใหม่</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: รายงานประจำเดือน & RTC + PDF Export -->
+    <div class="tab-pane fade" id="report-pane">
+      <div class="card p-4">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+          <div>
+            <h5 class="card-title text-dark fw-bold mb-1">รายงานประจำเดือน & รายการสินค้าต้องติด RTC</h5>
+            <p class="text-muted small mb-0">Turtle Shop - สาขาสนามกีฬาแห่งชาติ</p>
+          </div>
+          <div class="no-print d-flex gap-2">
+            <button class="btn btn-danger px-4" onclick="window.print()"><i class="bi bi-file-earmark-pdf-fill me-1"></i> แชร์ / บันทึก PDF</button>
+            <button class="btn btn-outline-secondary" onclick="loadLogs()"><i class="bi bi-arrow-clockwise"></i> รีเฟรช</button>
+          </div>
+        </div>
+        
+        <div class="row mb-3 no-print">
+          <div class="col-md-4">
+            <label class="form-label small fw-medium">กรองตามเดือน/ปี</label>
+            <input type="month" id="filterMonth" class="form-control" onchange="renderReport()">
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-hover table-striped align-middle" id="reportTable">
+            <thead class="table-dark">
+              <tr>
+                <th>บาร์โค้ด</th>
+                <th>ชื่อสินค้า</th>
+                <th>ราคา</th>
+                <th>วันหมดอายุ</th>
+                <th>วันที่เหลือ</th>
+                <th>สถานะ / RTC</th>
+                <th class="no-print text-center">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody">
+              <tr><td colspan="7" class="text-center py-4 text-muted">กำลังโหลดข้อมูล...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast แจ้งเตือนสั้นๆ มุมขวาล่าง -->
+<div id="toastContainer" style="position:fixed; bottom:20px; right:20px; z-index:9999;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // ⚠️ วาง Web App URL จาก Google Apps Script ตรงนี้
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbz6RlSaJGPOzo5yQARnoP1OBj-OxACOWQDL7jXh0EsQXfuq_ezpSGLWG07C7EUEj660/exec";
+
+  let masterProducts = [];
+  let expiryLogs = [];
+  let selectedProduct = null;
+
+  window.onload = function() {
+    loadMaster();
+    const now = new Date();
+    document.getElementById('filterMonth').value = now.toISOString().slice(0, 7);
+  };
+
+  // โหลดรายการสินค้า Master เก็บไว้ในหน่วยความจำเพื่อความรวดเร็ว
+  function loadMaster() {
+    fetch(`${GAS_URL}?action=getMaster`)
+      .then(res => res.json())
+      .then(data => { masterProducts = data; })
+      .catch(err => console.error('Error loading master:', err));
+  }
+
+  // ค้นหาสินค้าทันทีที่พิมพ์หรือยิงบาร์โค้ด
+  function findProduct() {
+    const bc = document.getElementById('scanBarcode').value.trim();
+    selectedProduct = masterProducts.find(p => p.barcode === bc);
+    const info = document.getElementById('productInfo');
+    if (selectedProduct) {
+      document.getElementById('dispName').innerText = selectedProduct.name;
+      document.getElementById('dispPrice').innerText = selectedProduct.price;
+      info.classList.remove('d-none');
+    } else {
+      info.classList.add('d-none');
+    }
+    calcDays();
+  }
+
+  // คำนวณวันหมดอายุและสถานะ RTC อัตโนมัติ
+  function calcDays() {
+    const expVal = document.getElementById('expiryDate').value;
+    const resDiv = document.getElementById('calcResult');
+    if (!expVal) { resDiv.classList.add('d-none'); return; }
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const expDate = new Date(expVal);
+    expDate.setHours(0,0,0,0);
+
+    const diffTime = expDate - today;
+    const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    document.getElementById('daysLeft').innerText = days;
+    const rtcDiv = document.getElementById('rtcStatus');
+
+    if (days <= 0) {
+      rtcDiv.innerHTML = `<span class="badge badge-expired"><i class="bi bi-exclamation-octagon-fill me-1"></i> สินค้าหมดอายุแล้ว (นำออกทันที)</span>`;
+    } else if (days <= 15) {
+      rtcDiv.innerHTML = `<span class="badge badge-rtc-50"><i class="bi bi-tag-fill me-1"></i> ติดสติกเกอร์ RTC 50%</span>`;
+    } else if (days <= 30) {
+      rtcDiv.innerHTML = `<span class="badge badge-rtc-30"><i class="bi bi-tag-fill me-1"></i> ติดสติกเกอร์ RTC 30%</span>`;
+    } else {
+      rtcDiv.innerHTML = `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i> อายุสินค้าปกติ</span>`;
+    }
+    resDiv.classList.remove('d-none');
+  }
+
+  // บันทึกสินค้าใหม่เข้า Master
+  function saveMaster() {
+    const barcode = document.getElementById('newBarcode').value.trim();
+    const name = document.getElementById('newName').value.trim();
+    const price = document.getElementById('newPrice').value.trim();
+
+    if (!barcode || !name || !price) return alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+
+    fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'addMaster', barcode, name, price })
+    }).then(res => res.json()).then(res => {
+      if(res.success) {
+        showToast('เพิ่มสินค้าเข้าสต๊อกสำเร็จ!');
+        document.getElementById('newBarcode').value = '';
+        document.getElementById('newName').value = '';
+        document.getElementById('newPrice').value = '';
+        loadMaster();
+      }
+    });
+  }
+
+  // บันทึกรายการหมดอายุแบบรวดเร็ว (Optimistic UI) พร้อมยิงบาร์โค้ดต่อเนื่องได้ทันที
+  function saveLog() {
+    const barcodeInput = document.getElementById('scanBarcode');
+    const expiryInput = document.getElementById('expiryDate');
+    const barcode = barcodeInput.value.trim();
+    const expiryDate = expiryInput.value;
+
+    if (!selectedProduct) return alert('ไม่พบข้อมูลสินค้าจากบาร์โค้ดนี้ กรุณาตรวจสอบหรือเพิ่มสินค้าใหม่ก่อน');
+    if (!expiryDate) return alert('กรุณาเลือกวันหมดอายุ');
+
+    const newLogItem = {
+      id: 'LOG-' + Date.now(),
+      barcode: barcode,
+      name: selectedProduct.name,
+      price: selectedProduct.price,
+      expiryDate: expiryDate
+    };
+    expiryLogs.push(newLogItem);
+
+    // เคลียร์ช่องทันทีเพื่อให้ผู้ใช้สแกนตัวถัดไปได้ทันที (ไม่ต้องรออินเทอร์เน็ต)
+    barcodeInput.value = '';
+    expiryInput.value = '';
+    document.getElementById('productInfo').classList.add('d-none');
+    document.getElementById('calcResult').classList.add('d-none');
+    selectedProduct = null;
+    barcodeInput.focus();
+
+    showToast('บันทึกสำเร็จ!');
+
+    // ส่งข้อมูลไปบันทึกเบื้องหลัง
+    fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'saveLog',
+        barcode: newLogItem.barcode,
+        name: newLogItem.name,
+        price: newLogItem.price,
+        expiryDate: newLogItem.expiryDate
+      })
+    }).catch(err => console.error('Sync background error:', err));
+  }
+
+  // โหลดรายการ Logs
+  function loadLogs() {
+    fetch(`${GAS_URL}?action=getLogs`)
+      .then(res => res.json())
+      .then(data => {
+        expiryLogs = data;
+        renderReport();
+      })
+      .catch(err => console.error('Error loading logs:', err));
+  }
+
+  // เรนเดอร์รายงานประจำเดือน
+  function renderReport() {
+    const tbody = document.getElementById('logTableBody');
+    const filterM = document.getElementById('filterMonth').value;
+    tbody.innerHTML = '';
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    const filtered = expiryLogs.filter(item => {
+      if (filterM && !item.expiryDate.startsWith(filterM)) return false;
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">ไม่พบรายการสินค้าในเดือนนี้</td></tr>`;
+      return;
+    }
+
+    filtered.forEach(item => {
+      const expDate = new Date(item.expiryDate);
+      expDate.setHours(0,0,0,0);
+      const days = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+
+      let rtcBadge = '';
+      if (days <= 0) rtcBadge = `<span class="badge badge-expired">หมดอายุแล้ว (ลบออก)</span>`;
+      else if (days <= 15) rtcBadge = `<span class="badge badge-rtc-50">RTC 50%</span>`;
+      else if (days <= 30) rtcBadge = `<span class="badge badge-rtc-30">RTC 30%</span>`;
+      else rtcBadge = `<span class="badge bg-light text-dark">ปกติ</span>`;
+
+      tbody.innerHTML += `
+        <tr>
+          <td><code>${item.barcode}</code></td>
+          <td class="fw-medium">${item.name}</td>
+          <td>${item.price} ฿</td>
+          <td>${item.expiryDate}</td>
+          <td class="fw-bold ${days <= 15 ? 'text-danger' : ''}">${days} วัน</td>
+          <td>${rtcBadge}</td>
+          <td class="no-print text-center">
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteLog('${item.id}')"><i class="bi bi-trash"></i> ลบ</button>
+          </td>
+        </tr>
+      `;
+    });
+  }
+
+  // ลบรายการสินค้าหมดอายุ
+  function deleteLog(id) {
+    if (!confirm('ยืนยันลบรายการนี้ออกจากระบบใช่หรือไม่?')) return;
+    
+    // อัปเดตหน้าจอทันที
+    expiryLogs = expiryLogs.filter(i => i.id !== id);
+    renderReport();
+    showToast('ลบรายการสำเร็จ');
+
+    fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'deleteLog', id })
+    }).catch(err => console.error('Delete error:', err));
+  }
+
+  // Toast แจ้งเตือนสวยๆ
+  function showToast(text) {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = 'alert alert-success shadow py-2 px-3 mb-2 fade show';
+    toast.innerHTML = `<i class="bi bi-check-circle-fill me-1"></i> ${text}`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, 2000);
+  }
+</script>
+</body>
+</html>
